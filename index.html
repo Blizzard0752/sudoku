@@ -218,7 +218,7 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
     var t0 = performance.now();
     if (solve(b)) {
       cells = b; solvedMode = true; hl = 0; render();
-      say('解出來了（' + Math.max(1, Math.round(performance.now() - t0)) + ' 毫秒）。按數字鍵可標出答案中的該數字。', 'ok');
+      say('解出來了。按數字鍵可標出該數字。', 'ok');
     } else {
       say('這題無解，請檢查輸入的數字是否正確。', 'err');
     }
