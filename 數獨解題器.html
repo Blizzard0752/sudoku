@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>數獨解題器</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#eef1f4; --card:#fbfcfd; --ink:#1d2733; --line:#b9c2cc; --thick:#1d2733;
+  --sel:#cfe3f5; --peer:#e4edf5; --solved:#0b7a6b; --bad:#c43d3d; --badbg:#f8dcdc;
+  --btn:#1d2733; --btntxt:#fbfcfd; --key:#e1e6eb;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#12171d; --card:#1a2129; --ink:#e6ebf0; --line:#3a4651; --thick:#aab6c2;
+    --sel:#2b4660; --peer:#222c36; --solved:#4fd1bd; --bad:#ff8585; --badbg:#4a2326;
+    --btn:#e6ebf0; --btntxt:#12171d; --key:#27313b;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#12171d; --card:#1a2129; --ink:#e6ebf0; --line:#3a4651; --thick:#aab6c2;
+  --sel:#2b4660; --peer:#222c36; --solved:#4fd1bd; --bad:#ff8585; --badbg:#4a2326;
+  --btn:#e6ebf0; --btntxt:#12171d; --key:#27313b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  display:flex;justify-content:center;min-height:100vh}
+main{width:100%;max-width:440px;padding:16px 14px 24px}
+h1{font-size:20px;margin:4px 2px 2px;font-weight:700}
+p.hint{margin:0 2px 12px;font-size:14px;color:var(--ink);opacity:.7}
+#board{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));grid-template-rows:repeat(9,minmax(0,1fr));width:100%;aspect-ratio:1;
+  background:var(--card);border:2px solid var(--thick);touch-action:manipulation;user-select:none}
+.c{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:hidden;line-height:1;font-size:clamp(16px,5.4vw,24px);
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line);cursor:pointer;font-variant-numeric:tabular-nums}
+.c:nth-child(3n){border-right:2px solid var(--thick)}
+.c:nth-child(9n){border-right:0}
+.c:nth-child(n+19):nth-child(-n+27),.c:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid var(--thick)}
+.c:nth-child(n+73){border-bottom:0}
+.c.peer{background:var(--peer)}
+.c.sel{background:var(--sel)}
+.c.solved{color:var(--solved);font-weight:600}
+.c.bad{background:var(--badbg);color:var(--bad)}
+#msg{min-height:24px;margin:12px 2px 8px;font-size:15px}
+#msg.err{color:var(--bad)} #msg.ok{color:var(--solved)}
+#pad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+#pad .wide{grid-column:1/-1;font-size:17px}
+button{font:inherit;border:0;border-radius:10px;min-height:52px;font-size:20px;
+  background:var(--key);color:var(--ink);cursor:pointer}
+button:active{transform:scale(.96)}
+button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-offset:2px}
+#actions{display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-top:12px}
+#solve{background:var(--btn);color:var(--btntxt);font-weight:700;font-size:18px}
+#clear{font-size:16px}
+</style>
+</head>
+<body>
+<main>
+  <h1>數獨解題器</h1>
+  <p class="hint">從左上角開始，依序輸入每一格；遇到空格就按「空格」，最後按「解題」。</p>
+  <div id="board" role="grid" aria-label="數獨盤面"></div>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <div id="pad"></div>
+  <div id="actions">
+    <button id="solve">解題</button>
+    <button id="clear">全部清除</button>
+  </div>
+</main>
+<script>
+(function(){
+  var cells = new Array(81).fill(0);   // 目前盤面
+  var given = new Array(81).fill(false); // 使用者輸入的
+  var sel = 0;
+  var boardEl = document.getElementById('board');
+  var msg = document.getElementById('msg');
+  var els = [];
+
+  for (var i = 0; i < 81; i++) {
+    var d = document.createElement('div');
+    d.className = 'c';
+    d.tabIndex = 0;
+    d.setAttribute('role', 'gridcell');
+    d.dataset.i = i;
+    boardEl.appendChild(d);
+    els.push(d);
+  }
+  boardEl.addEventListener('click', function(e){
+    var t = e.target.closest('.c'); if (t) select(+t.dataset.i);
+  });
+
+  var pad = document.getElementById('pad');
+  for (var n = 1; n <= 9; n++) addKey(String(n), '輸入 ' + n, function(v){ return function(){ put(v); }; }(n));
+  addKey('⌫', '退回上一格', back);
+  addKey('空格（這一格是空的）', '這一格是空格', function(){ put(0); }, 'wide');
+  function addKey(label, aria, fn, cls){
+    var b = document.createElement('button');
+    b.textContent = label;
+    b.setAttribute('aria-label', aria);
+    if (cls) b.className = cls;
+    b.addEventListener('click', fn);
+    pad.appendChild(b);
+  }
+
+  function select(i){ sel = i; render(); }
+  function put(v){
+    cells[sel] = v; given[sel] = v !== 0;
+    clearSolved();
+    if (sel < 80) sel++;
+    say('');
+    render();
+  }
+  function back(){
+    if (sel > 0) sel--;
+    cells[sel] = 0; given[sel] = false;
+    clearSolved();
+    say('');
+    render();
+  }
+  // 改動題目後，清掉先前解出的數字
+  function clearSolved(){
+    for (var i = 0; i < 81; i++) if (!given[i]) cells[i] = 0;
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key >= '1' && e.key <= '9') put(+e.key);
+    else if (e.key === '0' || e.key === ' ' || e.key === 'Delete') { e.preventDefault(); put(0); }
+    else if (e.key === 'Backspace') back();
+    else if (sel >= 0) {
+      var r = Math.floor(sel / 9), c = sel % 9;
+      if (e.key === 'ArrowUp') r = Math.max(0, r - 1);
+      else if (e.key === 'ArrowDown') r = Math.min(8, r + 1);
+      else if (e.key === 'ArrowLeft') c = Math.max(0, c - 1);
+      else if (e.key === 'ArrowRight') c = Math.min(8, c + 1);
+      else return;
+      e.preventDefault(); select(r * 9 + c);
+    }
+  });
+
+  function conflicts(){
+    var bad = new Set();
+    for (var i = 0; i < 81; i++) {
+      if (!cells[i]) continue;
+      for (var j = i + 1; j < 81; j++) {
+        if (cells[j] !== cells[i]) continue;
+        var ri = (i/9)|0, ci = i%9, rj = (j/9)|0, cj = j%9;
+        if (ri === rj || ci === cj || ((ri/3)|0) === ((rj/3)|0) && ((ci/3)|0) === ((cj/3)|0)) {
+          bad.add(i); bad.add(j);
+        }
+      }
+    }
+    return bad;
+  }
+
+  function render(){
+    var bad = given.some(Boolean) ? conflicts() : new Set();
+    for (var i = 0; i < 81; i++) {
+      var el = els[i], cls = 'c';
+      if (sel >= 0) {
+        var r = (i/9)|0, c = i%9, sr = (sel/9)|0, sc = sel%9;
+        if (i === sel) cls += ' sel';
+        else if (r === sr || c === sc || ((r/3)|0) === ((sr/3)|0) && ((c/3)|0) === ((sc/3)|0)) cls += ' peer';
+      }
+      if (cells[i] && !given[i]) cls += ' solved';
+      if (bad.has(i)) cls += ' bad';
+      el.className = cls;
+      el.textContent = cells[i] || '';
+    }
+  }
+
+  function say(t, kind){ msg.textContent = t; msg.className = kind || ''; }
+
+  // 回溯法：與原本 C++ 邏輯相同，但每次挑「候選數最少」的空格，速度更穩定
+  function solve(b){
+    var best = -1, bestMask = 0, bestCount = 10;
+    for (var i = 0; i < 81; i++) {
+      if (b[i]) continue;
+      var m = candidates(b, i), cnt = bits(m);
+      if (cnt < bestCount) { best = i; bestMask = m; bestCount = cnt; if (cnt === 0) return false; if (cnt === 1) break; }
+    }
+    if (best < 0) return true;
+    for (var n = 1; n <= 9; n++) {
+      if (bestMask & (1 << n)) {
+        b[best] = n;
+        if (solve(b)) return true;
+        b[best] = 0;
+      }
+    }
+    return false;
+  }
+  function candidates(b, i){
+    var r = (i/9)|0, c = i%9, used = 0;
+    for (var k = 0; k < 9; k++) { used |= 1 << b[r*9+k]; used |= 1 << b[k*9+c]; }
+    var sr = r - r%3, sc = c - c%3;
+    for (var a = 0; a < 3; a++) for (var d = 0; d < 3; d++) used |= 1 << b[(sr+a)*9 + sc+d];
+    return ~used & 0x3FE;
+  }
+  function bits(m){ var n = 0; while (m) { n += m & 1; m >>= 1; } return n; }
+
+  document.getElementById('solve').addEventListener('click', function(){
+    var count = given.filter(Boolean).length;
+    if (count < 17) { say('至少要輸入 17 個數字，才可能有唯一解。目前只有 ' + count + ' 個。', 'err'); return; }
+    if (conflicts().size) { say('有數字重複（紅色格子），請先修正。', 'err'); render(); return; }
+    var b = cells.slice();
+    var t0 = performance.now();
+    if (solve(b)) {
+      cells = b; render();
+      say('解出來了（' + Math.max(1, Math.round(performance.now() - t0)) + ' 毫秒）。', 'ok');
+    } else {
+      say('這題無解，請檢查輸入的數字是否正確。', 'err');
+    }
+  });
+
+  document.getElementById('clear').addEventListener('click', function(){
+    cells.fill(0); given.fill(false); sel = 0; say(''); render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
