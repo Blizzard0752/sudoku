@@ -48,6 +48,7 @@ p.hint{margin:0 2px 12px;font-size:14px;color:var(--ink);opacity:.7}
 .c.sel{background:var(--sel)}
 .c.solved{color:var(--solved);font-weight:600}
 .c.bad{background:var(--badbg);color:var(--bad)}
+.c.hl{color:var(--bad);font-weight:700}
 #msg{min-height:24px;margin:12px 2px 8px;font-size:15px}
 #msg.err{color:var(--bad)} #msg.ok{color:var(--solved)}
 #pad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
@@ -63,8 +64,8 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
 </head>
 <body>
 <main>
-  <h1>數獨解題器</h1>
-  <p class="hint">從左上角開始，依序輸入每一格；遇到空格就按「空格」，最後按「解題」。</p>
+  <h1>挖礦時間</h1>
+  <p class="hint">從左上角開始，依序輸入每一格；遇到空格就按「空格」，最後按「解題」。也可以直接點選空格輸入數字</p>
   <div id="board" role="grid" aria-label="數獨盤面"></div>
   <div id="msg" role="status" aria-live="polite"></div>
   <div id="pad"></div>
@@ -77,7 +78,7 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
 (function(){
   var cells = new Array(81).fill(0);   // 目前盤面
   var given = new Array(81).fill(false); // 使用者輸入的
-  var sel = 0;
+  var sel = 0, solvedMode = false, hl = 0;
   var boardEl = document.getElementById('board');
   var msg = document.getElementById('msg');
   var els = [];
@@ -108,8 +109,12 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
     pad.appendChild(b);
   }
 
-  function select(i){ sel = i; render(); }
+  function select(i){
+    if (solvedMode) { solvedMode = false; hl = 0; clearSolved(); say(''); }
+    sel = i; render();
+  }
   function put(v){
+    if (solvedMode) { hl = (v && hl !== v) ? v : 0; render(); return; }
     cells[sel] = v; given[sel] = v !== 0;
     clearSolved();
     if (sel < 80) sel++;
@@ -117,6 +122,7 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
     render();
   }
   function back(){
+    if (solvedMode) { hl = 0; render(); return; }
     if (sel > 0) sel--;
     cells[sel] = 0; given[sel] = false;
     clearSolved();
@@ -168,6 +174,7 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
         else if (r === sr || c === sc || ((r/3)|0) === ((sr/3)|0) && ((c/3)|0) === ((sc/3)|0)) cls += ' peer';
       }
       if (cells[i] && !given[i]) cls += ' solved';
+      if (solvedMode && hl && cells[i] === hl) cls += ' hl';
       if (bad.has(i)) cls += ' bad';
       el.className = cls;
       el.textContent = cells[i] || '';
@@ -210,15 +217,15 @@ button:focus-visible,.c:focus-visible{outline:3px solid var(--solved);outline-of
     var b = cells.slice();
     var t0 = performance.now();
     if (solve(b)) {
-      cells = b; render();
-      say('解出來了（' + Math.max(1, Math.round(performance.now() - t0)) + ' 毫秒）。', 'ok');
+      cells = b; solvedMode = true; hl = 0; render();
+      say('解出來了（' + Math.max(1, Math.round(performance.now() - t0)) + ' 毫秒）。按數字鍵可標出答案中的該數字。', 'ok');
     } else {
       say('這題無解，請檢查輸入的數字是否正確。', 'err');
     }
   });
 
   document.getElementById('clear').addEventListener('click', function(){
-    cells.fill(0); given.fill(false); sel = 0; say(''); render();
+    cells.fill(0); given.fill(false); sel = 0; solvedMode = false; hl = 0; say(''); render();
   });
 
   render();
