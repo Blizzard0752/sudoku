@@ -1,4 +1,4 @@
-# blizzard0752.github.io/sudoku/
+# [blizzard0752.github.io/sudoku/](https://blizzard0752.github.io/sudoku/)
 
 我們一起來挖礦!!!!!!!!!!!
 
